@@ -1,35 +1,95 @@
 //
 //  LocationManager.m
-//  Twyst News App
 //
 //  Created by Kulraj Singh on 23/04/15.
-//  Copyright (c) 2015 Mobiloitte Inc. All rights reserved.
 //
+
+#define LOCATION_SETTINGS 200
 
 #import "LocationManager.h"
 #import <UIKit/UIKit.h>
+#import "AppDelegate.h"
 
-#define kLatitude @"latitude"
-#define kLongitude @"longitude"
-
-#define ShowAlert(myTitle, myMessage) [[[UIAlertView alloc] initWithTitle:myTitle message:myMessage delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil, nil] show]
-
-@interface LocationManager ()<CLLocationManagerDelegate, UIAlertViewDelegate> {
+@interface LocationManager ()<CLLocationManagerDelegate> {
+    NSDate *_lastUpdateTime;
     CLLocationManager *_locationManager;
+    AppDelegate *_appDelegate;
 }
 
 @end
 
 @implementation LocationManager
 
+- (id)init
+{
+    self = [super init];
+    if (self) {
+        _locationManager = [[CLLocationManager alloc]init];
+        _locationManager.delegate = self;
+    }
+    return self;
+}
+
+- (void)fetchAlways
+{
+    if ([_locationManager respondsToSelector:@selector(requestAlwaysAuthorization)]) {
+        [_locationManager requestAlwaysAuthorization];
+    }
+    [_locationManager startUpdatingLocation];
+}
+
 - (void)startFetchingLocation
 {
-    _locationManager = [[CLLocationManager alloc]init];
-    _locationManager.delegate = self;
     if ([_locationManager respondsToSelector:@selector(requestWhenInUseAuthorization)]) {
         [_locationManager requestWhenInUseAuthorization];
     }
     [_locationManager startUpdatingLocation];
+}
+
+- (void)stopFetchingLocation
+{
+    [_locationManager stopUpdatingLocation];
+}
+
+#pragma mark - alert
+
+- (void)showAlertWithTitle:(NSString*)title message:(NSString*)message
+{
+    [self showAlertWithTitle:title message:message cancelButtonTitle:nil otherButtonTitles:@[@"OK"] tag:0];
+}
+
+- (void)showAlertWithTitle:(NSString *)title message:(NSString *)message cancelButtonTitle:(NSString *)cancelTitle otherButtonTitles:(NSArray *)otherButtonTitles tag:(NSInteger)tag
+{
+    _appDelegate = (AppDelegate*)[[UIApplication sharedApplication]delegate];
+    //TODO: change the extraction of top view controller as per your app structure
+    //or pass the view controller as a property. the delegate would usually be a view controller
+    UINavigationController *nav = (UINavigationController*)_appDelegate.window.rootViewController;
+    UIViewController *vc = (UIViewController*)nav.topViewController;
+    
+    UIAlertController *uiAlertController = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    
+    if (cancelTitle) {
+        UIAlertAction *cancel = [UIAlertAction actionWithTitle:cancelTitle style:UIAlertActionStyleCancel handler:^(UIAlertAction * action)
+                                 {
+                                     [uiAlertController dismissViewControllerAnimated:YES completion:nil];
+                                     
+                                 }];
+        [uiAlertController addAction:cancel];
+    }
+    
+    for (NSString *buttonTitle in otherButtonTitles) {
+        UIAlertAction* ok = [UIAlertAction actionWithTitle:buttonTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction * action)
+                             {
+                                 [uiAlertController dismissViewControllerAnimated:YES completion:nil];
+                                 if (tag == LOCATION_SETTINGS) {
+                                     [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
+                                 }
+                                 
+                             }];
+        [uiAlertController addAction:ok];
+    }
+    
+    [vc presentViewController:uiAlertController animated:YES completion:nil];
 }
 
 #pragma mark - location manager delegate
@@ -44,15 +104,14 @@
             
         case kCLAuthorizationStatusRestricted:
         {
-            ShowAlert(@"Access Restricted", @"You may not have permission for fetching the location");
+            [self showAlertWithTitle:@"Access Restricted" message:@"You may not have permission for fetching the location"];
             [_locationManager stopUpdatingLocation];
             break;
         }
             
         case kCLAuthorizationStatusDenied:
         {
-            UIAlertView *alertView = [[UIAlertView alloc]initWithTitle:@"Location Access Denied" message:@"Please allow access from location settings" delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"OK", nil];
-            [alertView show];
+            [self showAlertWithTitle:@"Location Access Denied" message:@"Please allow access from location settings" cancelButtonTitle:@"Cancel" otherButtonTitles:@[@"OK"] tag:LOCATION_SETTINGS];
             [_locationManager stopUpdatingLocation];
             break;
         }
@@ -76,7 +135,7 @@
     if (latitude || longitude) {
         [self.delegate didUpdateToLocation:CLLocationCoordinate2DMake(latitude, longitude)];
     } else {
-        ShowAlert(@"Failed To Update Location", @"Please check your internet connection");
+        [self showAlertWithTitle:@"Failed To Update Location" message:@"Please check your internet connection"];
         [self.delegate locationUpdateFailed];
     }
 }
@@ -84,7 +143,9 @@
 - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations
 {
     CLLocation *location = [locations lastObject];
+    
     //store the location as well
+    
     CLLocationCoordinate2D coordinate = location.coordinate;
     [[NSUserDefaults standardUserDefaults]setFloat:coordinate.latitude forKey:kLatitude];
     [[NSUserDefaults standardUserDefaults]setFloat:coordinate.longitude forKey:kLongitude];
@@ -93,14 +154,10 @@
     [self.delegate didUpdateToLocation:location.coordinate];
 }
 
-#pragma mark - alert view delegate
-
-- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex
+- (void)restartLocationFetch
 {
-    if (buttonIndex == 1) {
-        //go to settings
-        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
-    }
+    [_locationManager stopUpdatingLocation];
+    [_locationManager startUpdatingLocation];
 }
 
 @end
